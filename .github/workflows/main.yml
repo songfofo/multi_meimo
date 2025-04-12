@@ -1,0 +1,26 @@
+name: Daily Auto Sign-in
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # Run at 1:00 UTC daily (9:00 Beijing time)
+  workflow_dispatch:     # Allow manual triggers
+
+jobs:
+  signin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Execute sign-in
+        run: node sign.js
+        env:
+          ACCOUNTS: ${{ secrets.ACCOUNTS }}

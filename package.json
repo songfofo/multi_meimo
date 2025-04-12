@@ -1,0 +1,12 @@
+{
+    "name": "meimoai-multi-account-signin",
+    "version": "1.0.0",
+    "description": "Automatic sign-in script for multiple accounts",
+    "main": "sign.js",
+    "scripts": {
+      "start": "node sign.js"
+    },
+    "dependencies": {
+      "axios": "^1.6.0"
+    }
+  }
