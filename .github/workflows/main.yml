@@ -2,7 +2,7 @@ name: Daily Auto Sign-in
 
 on:
   schedule:
-    - cron: '0 1 * * *'  # Run at 1:00 UTC daily (9:00 Beijing time)
+    - cron: '7 1 * * *'  # Run at 1:00 UTC daily (9:00 Beijing time)
   workflow_dispatch:     # Allow manual triggers
 
 jobs:
