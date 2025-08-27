@@ -1,61 +1,42 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
-// Use puppeteer-extra with the stealth plugin to be less detectable
+// 使用 puppeteer-extra 和 stealth 插件
 puppeteer.use(StealthPlugin());
 
-// Enhanced configuration
+// ***重要更新***：根据您的最新证据，将 baseURL 改回 sexyai.top
 const baseConfig = {
-  baseURL: 'https://sexyai.top',
+  baseURL: 'https://www.sexyai.top',
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 };
 
-// Generate a random device ID
 function generateDeviceId() {
   return Date.now().toString() + Math.random().toString().slice(2);
 }
 
-// Function to perform login and sign-in within the browser context
 async function processAccount(account) {
   let browser = null;
-  console.log(`🚀 Starting process for account: ${account.username}...`);
+  console.log(`🚀 开始处理账户: ${account.username}...`);
   try {
-    console.log('Launching headless browser with stealth...');
+    console.log('启动无头浏览器并应用 stealth 插件...');
     browser = await puppeteer.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', // Recommended for CI environments
-        '--single-process'
-      ],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
     });
     const page = await browser.newPage();
     await page.setUserAgent(baseConfig.userAgent);
 
-    // Go to the homepage to resolve Cloudflare and get initial cookies
-    console.log(`Navigating to ${baseConfig.baseURL} to bypass Cloudflare...`);
+    console.log(`导航至 ${baseConfig.baseURL} 以处理 Cloudflare...`);
     await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 90000 });
-    console.log('Cloudflare bypass successful. Page loaded.');
+    console.log('Cloudflare 验证通过，页面加载完成。');
 
-    // --- Perform Login via page.evaluate (replaces axios) ---
-    console.log(`Attempting to log in for ${account.username}...`);
+    console.log(`尝试为账户 ${account.username} 登录...`);
     const loginResult = await page.evaluate(async (url, username, password, deviceId) => {
       try {
         const response = await fetch(`${url}/api/user/login`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': '*/*',
-            'Lang': 'ZH'
-          },
-          body: JSON.stringify({
-            username: username,
-            password: password,
-            code: "",
-            inviteCode: '',
-            deviceId: deviceId
-          })
+          headers: { 'Content-Type': 'application/json', 'Accept': '*/*', 'Lang': 'ZH' },
+          body: JSON.stringify({ username, password, code: "", inviteCode: '', deviceId })
         });
         return await response.json();
       } catch (e) {
@@ -64,25 +45,19 @@ async function processAccount(account) {
     }, baseConfig.baseURL, account.username, account.password, generateDeviceId());
 
     if (loginResult.error || !loginResult.data || !loginResult.data.token) {
-      console.error(`❌ Account ${account.username} login failed. Response:`, JSON.stringify(loginResult));
-      throw new Error(`Login failed, no token obtained.`);
+      console.error(`❌ 账户 ${account.username} 登录失败. 响应:`, JSON.stringify(loginResult));
+      throw new Error(`登录失败，未能获取 token。`);
     }
 
     const token = loginResult.data.token;
-    console.log(`✅ Account ${account.username} logged in successfully.`);
+    console.log(`✅ 账户 ${account.username} 登录成功。`);
 
-    // --- Perform Sign-in via page.evaluate (replaces axios) ---
-    console.log(`Attempting to sign in for ${account.username}...`);
+    console.log(`尝试为账户 ${account.username} 执行签到...`);
     const signInResult = await page.evaluate(async (url, authToken) => {
       try {
         const response = await fetch(`${url}/api/user/sign-in`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': '*/*',
-            'Authorization': `Bearer ${authToken}`, // Pass the token in the authorization header
-            'Lang': 'ZH'
-          },
+          headers: { 'Content-Type': 'application/json', 'Accept': '*/*', 'Authorization': `Bearer ${authToken}`, 'Lang': 'ZH' },
           body: JSON.stringify({})
         });
         return await response.json();
@@ -91,89 +66,71 @@ async function processAccount(account) {
       }
     }, baseConfig.baseURL, token);
 
-    if (signInResult.code === 200) {
-      console.log(`✅ Account ${account.username} sign-in successful! Message:`, signInResult.message);
+    // 精确地检查 'data' 字段是否为 true
+    if (signInResult.data === true) {
+      console.log(`✅✅✅ 账户 ${account.username} 签到成功！`);
     } else {
-      console.log(`ℹ️ Account ${account.username} sign-in failed or already completed. Message:`, signInResult.message);
+      console.log(`ℹ️  账户 ${account.username} 今日可能已签到或签到失败。服务器消息:`, signInResult.message || JSON.stringify(signInResult));
     }
     
     return true;
 
   } catch (error) {
-    console.error(`❌ Process failed for account ${account.username}:`, error.message);
+    console.error(`❌ 处理账户 ${account.username} 时发生错误:`, error.message);
     return false;
   } finally {
     if (browser) {
       await browser.close();
-      console.log('Browser closed.');
+      console.log('浏览器已关闭。');
     }
   }
 }
 
-// Get accounts from environment variables
+// --- 后续代码无需修改 ---
+
 function getAccounts() {
   try {
     const accountsString = process.env.ACCOUNTS;
-    if (!accountsString) {
-      throw new Error('No accounts configured. Set the ACCOUNTS secret in GitHub.');
-    }
+    if (!accountsString) throw new Error('未配置账户信息，请在 GitHub Secrets 中设置 ACCOUNTS。');
     const accounts = JSON.parse(accountsString);
-    if (!Array.isArray(accounts) || accounts.length === 0) {
-      throw new Error('Invalid accounts format or empty accounts array.');
-    }
+    if (!Array.isArray(accounts) || accounts.length === 0) throw new Error('账户格式无效或为空。');
     return accounts;
   } catch (error) {
-    console.error('Error parsing accounts:', error.message);
+    console.error('解析账户信息时出错:', error.message);
     throw error;
   }
 }
 
-// Main execution function
 async function main() {
   try {
-    console.log('🚀 Starting automated sign-in script...');
-    
+    console.log('🚀 自动签到脚本启动...');
     const accounts = getAccounts();
-    console.log(`📋 Found ${accounts.length} account(s) to process.`);
+    console.log(`📋 发现 ${accounts.length} 个账户需要处理。`);
     
     let successCount = 0;
     let failCount = 0;
     
     for (const [index, account] of accounts.entries()) {
       const success = await processAccount(account);
-      if (success) {
-        successCount++;
-      } else {
-        failCount++;
-      }
+      if (success) successCount++;
+      else failCount++;
 
       if (index < accounts.length - 1) {
-        const delay = 5000 + Math.floor(Math.random() * 10000); // 5-15 seconds
-        console.log(`⏳ Waiting ${delay / 1000}s before processing the next account...`);
+        const delay = 5000 + Math.floor(Math.random() * 10000);
+        console.log(`⏳ 随机等待 ${delay / 1000} 秒后处理下一个账户...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     
-    console.log(`\n📊 All accounts processed.`);
-    console.log(`✅ Success: ${successCount}`);
-    console.log(`❌ Failed: ${failCount}`);
+    console.log(`\n📊 所有账户处理完毕。`);
+    console.log(`✅ 成功: ${successCount}`);
+    console.log(`❌ 失败: ${failCount}`);
     
-    if (failCount > 0) {
-      process.exit(1); // Exit with a non-zero code to indicate failure in GitHub Actions
-    }
-    
+    if (failCount > 0) process.exit(1);
   } catch (error) {
-    console.error('❌ Script execution failed:', error.message);
+    console.error('❌ 脚本主程序执行失败:', error.message);
     process.exit(1);
   }
 }
-
-// Local testing setup
-// if (process.env.NODE_ENV !== 'production') {
-//   process.env.ACCOUNTS = JSON.stringify([
-//     { "username": "your_email@example.com", "password": "your_password" },
-//     // Add other accounts for testing if needed
-//   ]);
-// }
 
 main();
