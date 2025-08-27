@@ -1,175 +1,116 @@
-const axios = require('axios');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
-// 增强配置 - 模拟真实浏览器，匹配您提供的headers
+// Use puppeteer-extra with the stealth plugin to be less detectable
+puppeteer.use(StealthPlugin());
+
+// Enhanced configuration
 const baseConfig = {
   baseURL: 'https://sexyai.top',
-  timeout: 30000,
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-    'Accept': '*/*',
-    'Accept-Language': 'zh-CN,zh;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Connection': 'keep-alive',
-    'Sec-Ch-Ua': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"macOS"',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'same-origin',
-    'Priority': 'u=1, i',
-    'Lang': 'ZH'
-  }
+  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 };
 
-// 创建axios实例
-const client = axios.create(baseConfig);
-
-// 生成随机设备ID，匹配您提供的格式（时间戳 + 随机数）
+// Generate a random device ID
 function generateDeviceId() {
   return Date.now().toString() + Math.random().toString().slice(2);
 }
 
-// 新函数：使用Puppeteer获取Cloudflare cookies
-async function getCloudflareCookies() {
+// Function to perform login and sign-in within the browser context
+async function processAccount(account) {
+  let browser = null;
+  console.log(`🚀 Starting process for account: ${account.username}...`);
   try {
-    console.log('Launching headless browser to bypass Cloudflare...');
-    const browser = await puppeteer.launch({
+    console.log('Launching headless browser with stealth...');
+    browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      // 移除 executablePath，让Puppeteer使用内置Chromium
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', // Recommended for CI environments
+        '--single-process'
+      ],
     });
     const page = await browser.newPage();
-    
-    // 设置User-Agent以匹配
-    await page.setUserAgent(baseConfig.headers['User-Agent']);
-    
-    // 导航到站点（这会触发并解决Cloudflare挑战）
-    await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 60000 });
-    
-    // 额外等待以确保cookies设置
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    const cookies = await page.cookies();
-    await browser.close();
-    
-    // 格式化为字符串用于headers
-    const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    console.log('Cloudflare cookies obtained:', cookieString);
-    
-    return cookieString;
-  } catch (error) {
-    console.error('Failed to get Cloudflare cookies:', error.message);
-    throw error;
-  }
-}
+    await page.setUserAgent(baseConfig.userAgent);
 
-// 增强的登录函数
-async function login(username, password) {
-  try {
-    console.log(`开始登录账户: ${username}...`);
-    
-    // 获取Cloudflare cookies
-    const cookieString = await getCloudflareCookies();
-    
-    const deviceId = generateDeviceId();
-    
-    const loginHeaders = {
-      ...baseConfig.headers,
-      'Content-Type': 'application/json',
-      'Origin': baseConfig.baseURL,
-      'Referer': `${baseConfig.baseURL}/`,
-      'Cookie': cookieString  // 注入cookies
-    };
-    
-    const loginResponse = await client({
-      method: 'post',
-      url: '/api/user/login',
-      headers: loginHeaders,
-      data: {
-        username: username,
-        code: "", 
-        password: password,
-        inviteCode: '',
-        deviceId: deviceId
+    // Go to the homepage to resolve Cloudflare and get initial cookies
+    console.log(`Navigating to ${baseConfig.baseURL} to bypass Cloudflare...`);
+    await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 90000 });
+    console.log('Cloudflare bypass successful. Page loaded.');
+
+    // --- Perform Login via page.evaluate (replaces axios) ---
+    console.log(`Attempting to log in for ${account.username}...`);
+    const loginResult = await page.evaluate(async (url, username, password, deviceId) => {
+      try {
+        const response = await fetch(`${url}/api/user/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Lang': 'ZH'
+          },
+          body: JSON.stringify({
+            username: username,
+            password: password,
+            code: "",
+            inviteCode: '',
+            deviceId: deviceId
+          })
+        });
+        return await response.json();
+      } catch (e) {
+        return { error: e.message };
       }
-    });
-    
-    if (loginResponse.data && loginResponse.data.data && loginResponse.data.data.token) {
-      console.log(`账户 ${username} 登录成功，获得token`);
-      return { token: loginResponse.data.data.token, cookieString };  // 返回token和cookies以供signIn使用
-    } else {
-      console.error(`账户 ${username} 登录失败，响应:`, loginResponse.data);
-      throw new Error(`账户 ${username} 登录失败，未获得token`);
+    }, baseConfig.baseURL, account.username, account.password, generateDeviceId());
+
+    if (loginResult.error || !loginResult.data || !loginResult.data.token) {
+      console.error(`❌ Account ${account.username} login failed. Response:`, JSON.stringify(loginResult));
+      throw new Error(`Login failed, no token obtained.`);
     }
-  } catch (error) {
-    console.error(`账户 ${username} 登录错误:`, error.message);
-    if (error.response) {
-      console.error('响应状态:', error.response.status);
-      console.error('响应数据:', error.response.data);
-      
-      if (error.response.status === 403) {
-        console.error('⚠️ 检测到Cloudflare防护，标准HTTP请求可能无法通过。');
+
+    const token = loginResult.data.token;
+    console.log(`✅ Account ${account.username} logged in successfully.`);
+
+    // --- Perform Sign-in via page.evaluate (replaces axios) ---
+    console.log(`Attempting to sign in for ${account.username}...`);
+    const signInResult = await page.evaluate(async (url, authToken) => {
+      try {
+        const response = await fetch(`${url}/api/user/sign-in`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Authorization': `Bearer ${authToken}`, // Pass the token in the authorization header
+            'Lang': 'ZH'
+          },
+          body: JSON.stringify({})
+        });
+        return await response.json();
+      } catch (e) {
+        return { error: e.message };
       }
-    }
-    throw error;
-  }
-}
+    }, baseConfig.baseURL, token);
 
-// 增强的签到函数
-async function signIn(username, token, cookieString) {
-  try {
-    console.log(`开始为账户 ${username} 执行签到...`);
-    
-    const signHeaders = {
-      ...baseConfig.headers,
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Origin': baseConfig.baseURL,
-      'Referer': `${baseConfig.baseURL}/`,
-      'Cookie': cookieString  // 使用相同的cookies
-    };
-    
-    const signResponse = await client({
-      method: 'post',
-      url: '/api/user/sign-in',
-      headers: signHeaders,
-      data: {} // 签到通常没有载荷
-    });
-    
-    if (signResponse.data.code === 200) {
-      console.log(`账户 ${username} 签到成功！响应数据:`, signResponse.data.message);
+    if (signInResult.code === 200) {
+      console.log(`✅ Account ${account.username} sign-in successful! Message:`, signInResult.message);
     } else {
-      console.log(`账户 ${username} 签到失败或已签到。响应数据:`, signResponse.data.message);
+      console.log(`ℹ️ Account ${account.username} sign-in failed or already completed. Message:`, signInResult.message);
     }
-    return signResponse.data;
+    
+    return true;
+
   } catch (error) {
-    console.error(`账户 ${username} 签到错误:`, error.message);
-    if (error.response) {
-      console.error('响应状态:', error.response.status);
-      console.error('响应数据:', error.response.data);
+    console.error(`❌ Process failed for account ${account.username}:`, error.message);
+    return false;
+  } finally {
+    if (browser) {
+      await browser.close();
+      console.log('Browser closed.');
     }
-    throw error;
   }
 }
 
-// 处理单个账户
-async function processAccount(account) {
-  try {
-    const { token, cookieString } = await login(account.username, account.password);
-    if (token) {
-      await signIn(account.username, token, cookieString);
-      console.log(`✅ 账户 ${account.username} 自动签到流程完成`);
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error(`❌ 账户 ${account.username} 自动签到失败:`, error.message);
-    return false;
-  }
-}
-
-// 获取账户
+// Get accounts from environment variables
 function getAccounts() {
   try {
     const accountsString = process.env.ACCOUNTS;
@@ -187,51 +128,51 @@ function getAccounts() {
   }
 }
 
-// 主函数
+// Main execution function
 async function main() {
   try {
-    console.log('🚀 开始执行自动签到脚本...');
+    console.log('🚀 Starting automated sign-in script...');
     
     const accounts = getAccounts();
-    console.log(`📋 找到 ${accounts.length} 个账户需要处理`);
+    console.log(`📋 Found ${accounts.length} account(s) to process.`);
     
     let successCount = 0;
     let failCount = 0;
     
-    for (const account of accounts) {
+    for (const [index, account] of accounts.entries()) {
       const success = await processAccount(account);
       if (success) {
         successCount++;
       } else {
         failCount++;
       }
-      // 随机延迟
-      if (accounts.indexOf(account) < accounts.length - 1) {
-        const delay = 5000 + Math.floor(Math.random() * 10000); // 5-15秒
-        console.log(`⏳ 等待 ${delay/1000}s 后处理下一个账户...`);
+
+      if (index < accounts.length - 1) {
+        const delay = 5000 + Math.floor(Math.random() * 10000); // 5-15 seconds
+        console.log(`⏳ Waiting ${delay / 1000}s before processing the next account...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     
-    console.log(`\n📊 所有账户处理完成`);
-    console.log(`✅ 成功: ${successCount}`);
-    console.log(`❌ 失败: ${failCount}`);
+    console.log(`\n📊 All accounts processed.`);
+    console.log(`✅ Success: ${successCount}`);
+    console.log(`❌ Failed: ${failCount}`);
     
     if (failCount > 0) {
-      console.log('\n💡 由于Cloudflare防护，脚本在GitHub Actions上可能仍需优化。');
+      process.exit(1); // Exit with a non-zero code to indicate failure in GitHub Actions
     }
     
   } catch (error) {
-    console.error('❌ 脚本执行失败:', error.message);
+    console.error('❌ Script execution failed:', error.message);
     process.exit(1);
   }
 }
 
-// 模拟 process.env.ACCOUNTS 用于本地测试
+// Local testing setup
 if (process.env.NODE_ENV !== 'production') {
   process.env.ACCOUNTS = JSON.stringify([
-    { "username": "2214601986lxx@gmail.com", "password": "your_password" },
-    { "username": "2214601986@qq.com", "password": "your_password" }
+    { "username": "your_email@example.com", "password": "your_password" },
+    // Add other accounts for testing if needed
   ]);
 }
 
