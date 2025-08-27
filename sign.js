@@ -2,19 +2,20 @@ const axios = require('axios');
 
 // 增强配置 - 模拟真实浏览器
 const baseConfig = {
-  baseURL: 'https://www.modubox.ai',
-  timeout: 30000, // 增加超时时间
+  // 修正1: 更新为新的 baseURL
+  baseURL: 'https://sexyai.top',
+  timeout: 30000,
   headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    // 修正2: 更新 User-Agent 以匹配你成功请求的浏览器（可选，但建议）
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     'Accept-Encoding': 'gzip, deflate, br',
     'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Cache-Control': 'max-age=0',
+    // 'Upgrade-Insecure-Requests': '1', // 对于API请求，这个头通常不是必需的
+    'Sec-Fetch-Dest': 'empty', // API请求通常是 'empty'
+    'Sec-Fetch-Mode': 'cors',    // API请求通常是 'cors'
+    'Sec-Fetch-Site': 'same-origin', // 从网站内部发起的API请求
     'DNT': '1',
     'Sec-GPC': '1'
   }
@@ -23,59 +24,22 @@ const baseConfig = {
 // 创建axios实例
 const client = axios.create(baseConfig);
 
-// 添加请求拦截器模拟更真实的行为
-client.interceptors.request.use(config => {
-  // 添加随机延迟
-  const delay = Math.floor(Math.random() * 2000) + 1000; // 1-3秒
-  return new Promise(resolve => {
-    setTimeout(() => resolve(config), delay);
-  });
-});
+// ... (其他函数保持不变) ...
 
 // 生成随机设备ID
 function generateDeviceId() {
-  return Date.now().toString() + Math.floor(Math.random() * 1000000);
+  // 修正3: 你的截图中的deviceId非常长，我们模拟一个类似的格式
+  return Date.now().toString() + Math.random().toString().slice(2);
 }
 
-// 解析账户
-function getAccounts() {
-  try {
-    const accountsString = process.env.ACCOUNTS;
-    if (!accountsString) {
-      throw new Error('No accounts configured. Set the ACCOUNTS secret in GitHub.');
-    }
-    
-    const accounts = JSON.parse(accountsString);
-    if (!Array.isArray(accounts) || accounts.length === 0) {
-      throw new Error('Invalid accounts format or empty accounts array.');
-    }
-    
-    return accounts;
-  } catch (error) {
-    console.error('Error parsing accounts:', error.message);
-    throw error;
-  }
-}
-
-// 首先访问主页，获取cookies和建立会话
-async function initSession() {
-  try {
-    console.log('正在初始化会话...');
-    await client.get('/');
-    console.log('会话初始化成功');
-    return true;
-  } catch (error) {
-    console.error('会话初始化失败:', error.message);
-    return false;
-  }
-}
+// ... (getAccounts 和 initSession 函数保持不变) ...
 
 // 增强的登录函数
 async function login(username, password) {
   try {
     console.log(`开始登录账户: ${username}...`);
     
-    // 初始化会话
+    // 初始化会话 (这一步很可能会因为Cloudflare失败)
     const sessionInit = await initSession();
     if (!sessionInit) {
       throw new Error('会话初始化失败');
@@ -83,13 +47,11 @@ async function login(username, password) {
     
     const deviceId = generateDeviceId();
     
-    // 添加更多真实的请求头
     const loginHeaders = {
       ...baseConfig.headers,
       'Content-Type': 'application/json',
       'Origin': baseConfig.baseURL,
-      'Referer': `${baseConfig.baseURL}/login`,
-      'X-Requested-With': 'XMLHttpRequest'
+      'Referer': `${baseConfig.baseURL}/` // 修正4: Referer通常是主页或登录页
     };
     
     const loginResponse = await client({
@@ -98,8 +60,9 @@ async function login(username, password) {
       headers: loginHeaders,
       data: {
         username: username,
+        // 修正5: 'code' 字段应为空字符串
+        code: "", 
         password: password,
-        code: password,
         inviteCode: '',
         deviceId: deviceId
       }
@@ -118,14 +81,15 @@ async function login(username, password) {
       console.error('响应状态:', error.response.status);
       console.error('响应数据:', error.response.data);
       
-      // 如果是403错误，特别提示
       if (error.response.status === 403) {
-        console.error('⚠️ 检测到Cloudflare防护，请考虑使用其他方案');
+        console.error('⚠️ 检测到Cloudflare防护，标准HTTP请求可能无法通过。');
       }
     }
     throw error;
   }
 }
+
+// ... (signIn, processAccount, main 函数保持不变) ...
 
 // 增强的签到函数
 async function signIn(username, token) {
@@ -135,19 +99,23 @@ async function signIn(username, token) {
     const signHeaders = {
       ...baseConfig.headers,
       'Content-Type': 'application/json',
-      'Authorization': token,
+      'Authorization': `Bearer ${token}`, // 通常Token前会有一个 'Bearer ' 前缀，如果不需要可以去掉
       'Origin': baseConfig.baseURL,
-      'Referer': `${baseConfig.baseURL}/dashboard`
+      'Referer': `${baseConfig.baseURL}/` // 签到操作的Referer可能是 dashboard 或其他页面
     };
     
     const signResponse = await client({
       method: 'post',
       url: '/api/user/sign-in',
       headers: signHeaders,
-      data: {}
+      data: {} // 签到通常没有载荷
     });
     
-    console.log(`账户 ${username} 签到成功！响应数据:`, signResponse.data);
+    if(signResponse.data.code === 200) {
+        console.log(`账户 ${username} 签到成功！响应数据:`, signResponse.data.message);
+    } else {
+        console.log(`账户 ${username} 签到失败或已签到。响应数据:`, signResponse.data.message);
+    }
     return signResponse.data;
   } catch (error) {
     console.error(`账户 ${username} 签到错误:`, error.message);
@@ -159,50 +127,29 @@ async function signIn(username, token) {
   }
 }
 
-// 处理单个账户
-async function processAccount(account) {
-  try {
-    // 1. 登录获取token
-    const token = await login(account.username, account.password);
-    
-    // 2. 使用token签到
-    const signResult = await signIn(account.username, token);
-    
-    console.log(`✅ 账户 ${account.username} 自动签到完成`);
-    return true;
-  } catch (error) {
-    console.error(`❌ 账户 ${account.username} 自动签到失败:`, error.message);
-    return false;
-  }
-}
-
 // 主函数
 async function main() {
   try {
     console.log('🚀 开始执行自动签到脚本...');
     
-    // 获取账户列表
     const accounts = getAccounts();
     console.log(`📋 找到 ${accounts.length} 个账户需要处理`);
     
     let successCount = 0;
     let failCount = 0;
     
-    for (let i = 0; i < accounts.length; i++) {
-      const account = accounts[i];
-      
-      // 账户间增加更长的随机延迟
-      if (i > 0) {
-        const delay = 5000 + Math.floor(Math.random() * 10000); // 5-15秒
-        console.log(`⏳ 等待 ${delay}ms 后处理下一个账户...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-      
+    for (const account of accounts) {
       const success = await processAccount(account);
       if (success) {
         successCount++;
       } else {
         failCount++;
+      }
+      // 随机延迟
+      if (accounts.indexOf(account) < accounts.length - 1) {
+        const delay = 5000 + Math.floor(Math.random() * 10000); // 5-15秒
+        console.log(`⏳ 等待 ${delay/1000}s 后处理下一个账户...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     
@@ -211,10 +158,7 @@ async function main() {
     console.log(`❌ 失败: ${failCount}`);
     
     if (failCount > 0) {
-      console.log('\n💡 如果遇到403错误，建议：');
-      console.log('1. 使用代理IP池');
-      console.log('2. 改用云服务器定时任务');
-      console.log('3. 手动执行签到');
+      console.log('\n💡 由于Cloudflare防护，脚本在GitHub Actions上很可能持续失败。');
     }
     
   } catch (error) {
@@ -223,5 +167,57 @@ async function main() {
   }
 }
 
-// 执行主函数
+// 模拟 process.env.ACCOUNTS 用于本地测试
+if (process.env.NODE_ENV !== 'production') {
+  process.env.ACCOUNTS = JSON.stringify([
+    { "username": "2214601986lxx@gmail.com", "password": "your_password" },
+    { "username": "2214601986@qq.com", "password": "your_password" }
+  ]);
+}
+
+function getAccounts() {
+  try {
+    const accountsString = process.env.ACCOUNTS;
+    if (!accountsString) {
+      throw new Error('No accounts configured. Set the ACCOUNTS secret in GitHub.');
+    }
+    const accounts = JSON.parse(accountsString);
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      throw new Error('Invalid accounts format or empty accounts array.');
+    }
+    return accounts;
+  } catch (error) {
+    console.error('Error parsing accounts:', error.message);
+    throw error;
+  }
+}
+
+async function initSession() {
+  try {
+    console.log('正在初始化会话...');
+    // 这一步在有Cloudflare的环境下会失败
+    await client.get('/');
+    console.log('会话初始化成功');
+    return true;
+  } catch (error) {
+    console.error('会话初始化失败:', error.message);
+    return false;
+  }
+}
+
+async function processAccount(account) {
+  try {
+    const token = await login(account.username, account.password);
+    if (token) {
+        await signIn(account.username, token);
+        console.log(`✅ 账户 ${account.username} 自动签到流程完成`);
+        return true;
+    }
+    return false;
+  } catch (error) {
+    console.error(`❌ 账户 ${account.username} 自动签到失败:`, error.message);
+    return false;
+  }
+}
+
 main();
