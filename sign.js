@@ -169,11 +169,11 @@ async function main() {
 }
 
 // Local testing setup
-if (process.env.NODE_ENV !== 'production') {
-  process.env.ACCOUNTS = JSON.stringify([
-    { "username": "your_email@example.com", "password": "your_password" },
-    // Add other accounts for testing if needed
-  ]);
-}
+// if (process.env.NODE_ENV !== 'production') {
+//   process.env.ACCOUNTS = JSON.stringify([
+//     { "username": "your_email@example.com", "password": "your_password" },
+//     // Add other accounts for testing if needed
+//   ]);
+// }
 
 main();
