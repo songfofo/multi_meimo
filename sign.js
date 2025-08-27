@@ -52,15 +52,19 @@ async function processAccount(account) {
     console.log(`✅ 账户 ${account.username} 登录成功。`);
 
     console.log(`尝试为账户 ${account.username} 执行签到...`);
-    // *** 最终修改：获取原始文本和状态，不再假设响应是JSON ***
     const signInResult = await page.evaluate(async (url, authToken) => {
       try {
         const response = await fetch(`${url}/api/user/sign-in`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': '*/*', 'Authorization': `Bearer ${authToken}`, 'Lang': 'ZH' },
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Accept': '*/*', 
+            'Authorization': `Bearer ${authToken}`,
+            'Origin': url,
+            'Referer': `${url}/`
+          },
           body: JSON.stringify({})
         });
-        // 返回包含状态码和原始文本的对象，确保此步不因解析失败
         return {
           status: response.status,
           text: await response.text()
@@ -70,26 +74,28 @@ async function processAccount(account) {
       }
     }, baseConfig.baseURL, token);
 
-    // *** 最终修改：编写健壮的逻辑来处理所有可能的响应 ***
+    if (signInResult.error) {
+        console.error(`❌ 账户 ${account.username} 签到请求失败: ${signInResult.error}`);
+        return false;
+    }
+
     if (signInResult.status === 200) {
       try {
-        // 尝试解析JSON
         const jsonResponse = JSON.parse(signInResult.text);
+        // *** 优化点：根据新截图的信息，精确判断成功条件 ***
         if (jsonResponse.data === true) {
-          // 这是最理想的情况：服务器返回了标准的成功JSON
           console.log(`✅✅✅ 账户 ${account.username} 签到成功！`);
         } else {
-          // 服务器返回了JSON，但内容不是预期的成功标志
-          console.log(`ℹ️  账户 ${account.username} 今日可能已签到或签到失败。服务器消息:`, jsonResponse.message || signInResult.text);
+          // 可能是“今日已签到”等情况，打印服务器返回的消息
+          console.log(`ℹ️  账户 ${account.username} 操作完成。服务器消息: ${jsonResponse.message || signInResult.text}`);
         }
       } catch (e) {
-        // 解析JSON失败，说明服务器返回了非JSON内容（这正是Action遇到的情况）
-        // 我们将其视为一种“软成功”或“已签到”状态，不再报错
-        console.log(`✅ 账户 ${account.username} 签到请求已发送。服务器返回非标准格式，可能已成功或今日已签到。`);
+        // 解析JSON失败，但请求是成功的。通常意味着“已签到”。
+        console.log(`✅ 账户 ${account.username} 签到请求已发送。服务器返回非JSON响应，可能已成功或今日已签到。响应内容: "${signInResult.text}"`);
       }
     } else {
-      // 如果HTTP状态码不是200，则明确为失败
-      console.log(`❌ 账户 ${account.username} 签到失败。状态码: ${signInResult.status}, 响应: ${signInResult.text}`);
+      console.error(`❌ 账户 ${account.username} 签到失败。状态码: ${signInResult.status}, 响应: ${signInResult.text}`);
+      return false;
     }
     
     return true;
@@ -104,6 +110,7 @@ async function processAccount(account) {
     }
   }
 }
+
 
 // --- 后续代码无需修改 ---
 
