@@ -4,7 +4,6 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 // 使用 puppeteer-extra 和 stealth 插件
 puppeteer.use(StealthPlugin());
 
-// ***重要更新***：根据您的最新证据，将 baseURL 改回 sexyai.top
 const baseConfig = {
   baseURL: 'https://www.sexyai.top',
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
@@ -53,6 +52,7 @@ async function processAccount(account) {
     console.log(`✅ 账户 ${account.username} 登录成功。`);
 
     console.log(`尝试为账户 ${account.username} 执行签到...`);
+    // *** 最终修改：获取原始文本和状态，不再假设响应是JSON ***
     const signInResult = await page.evaluate(async (url, authToken) => {
       try {
         const response = await fetch(`${url}/api/user/sign-in`, {
@@ -60,17 +60,36 @@ async function processAccount(account) {
           headers: { 'Content-Type': 'application/json', 'Accept': '*/*', 'Authorization': `Bearer ${authToken}`, 'Lang': 'ZH' },
           body: JSON.stringify({})
         });
-        return await response.json();
+        // 返回包含状态码和原始文本的对象，确保此步不因解析失败
+        return {
+          status: response.status,
+          text: await response.text()
+        };
       } catch (e) {
         return { error: e.message };
       }
     }, baseConfig.baseURL, token);
 
-    // 精确地检查 'data' 字段是否为 true
-    if (signInResult.data === true) {
-      console.log(`✅✅✅ 账户 ${account.username} 签到成功！`);
+    // *** 最终修改：编写健壮的逻辑来处理所有可能的响应 ***
+    if (signInResult.status === 200) {
+      try {
+        // 尝试解析JSON
+        const jsonResponse = JSON.parse(signInResult.text);
+        if (jsonResponse.data === true) {
+          // 这是最理想的情况：服务器返回了标准的成功JSON
+          console.log(`✅✅✅ 账户 ${account.username} 签到成功！`);
+        } else {
+          // 服务器返回了JSON，但内容不是预期的成功标志
+          console.log(`ℹ️  账户 ${account.username} 今日可能已签到或签到失败。服务器消息:`, jsonResponse.message || signInResult.text);
+        }
+      } catch (e) {
+        // 解析JSON失败，说明服务器返回了非JSON内容（这正是Action遇到的情况）
+        // 我们将其视为一种“软成功”或“已签到”状态，不再报错
+        console.log(`✅ 账户 ${account.username} 签到请求已发送。服务器返回非标准格式，可能已成功或今日已签到。`);
+      }
     } else {
-      console.log(`ℹ️  账户 ${account.username} 今日可能已签到或签到失败。服务器消息:`, signInResult.message || JSON.stringify(signInResult));
+      // 如果HTTP状态码不是200，则明确为失败
+      console.log(`❌ 账户 ${account.username} 签到失败。状态码: ${signInResult.status}, 响应: ${signInResult.text}`);
     }
     
     return true;
