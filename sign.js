@@ -37,7 +37,7 @@ async function getCloudflareCookies() {
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: '/usr/bin/google-chrome'  // 对于GitHub Actions，假设Chrome已安装
+      // 移除 executablePath，让Puppeteer使用内置Chromium
     });
     const page = await browser.newPage();
     
