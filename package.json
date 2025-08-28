@@ -7,11 +7,24 @@
     "start": "node sign.js"
   },
   "dependencies": {
-    "puppeteer": "^23.4.0",
+    "dotenv": "^17.2.1",
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^23.11.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhenlong-liu/multi_meimo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zhenlong-liu/multi_meimo/issues"
+  },
+  "homepage": "https://github.com/zhenlong-liu/multi_meimo#readme"
 }

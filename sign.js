@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
@@ -17,9 +19,9 @@ async function processAccount(account) {
   let browser = null;
   console.log(`🚀 开始处理账户: ${account.username}...`);
   try {
-    console.log('启动无头浏览器并应用 stealth 插件...');
+    console.log('启动浏览器并应用 stealth 插件...');
     browser = await puppeteer.launch({
-      headless: true,
+      headless: true, // 调试时建议设为 false，确认脚本稳定运行后可改为 true
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
     });
     const page = await browser.newPage();
@@ -45,68 +47,104 @@ async function processAccount(account) {
     }, baseConfig.baseURL, account.username, account.password, generateDeviceId());
 
     if (!loginResult.data || !loginResult.data.token) {
-      console.error(`❌ 账户 ${account.username} 登录失败. 响应:`, JSON.stringify(loginResult));
+      console.error(`❌ 账户 ${account.username} 登录失败. 响应中缺少 token:`, JSON.stringify(loginResult));
       throw new Error(`登录失败，未能获取 token。`);
     }
-    console.log(`✅ 账户 ${account.username} 登录成功。`);
-    
-    // 登录后刷新页面，确保登录状态在浏览器中生效
-    console.log('登录后刷新页面以应用会话...');
+
+    console.log(`✅ 账户 ${account.username} 登录成功, 已获取凭证。`);
+
+    const token = loginResult.data.token;
+    const userInfo = loginResult.data;
+    const TOKEN_KEY = 'TOKEN_KEY_';
+    const USER_INFO_KEY = 'USER_INFO_KEY_';
+
+    console.log(`正在将凭证注入浏览器...`);
+    await page.evaluate((tokKey, tokVal, userKey, userVal) => {
+      localStorage.setItem(tokKey, tokVal);
+      const userInfoString = JSON.stringify({ type: 'object', data: userVal });
+      localStorage.setItem(userKey, userInfoString);
+    }, TOKEN_KEY, token, USER_INFO_KEY, userInfo);
+
+    console.log('凭证注入完成，正在重新加载页面以应用会话...');
     await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 60000 });
+    console.log('登录后的页面已加载。');
+    
+    console.log('等待5秒，让首页充分渲染...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // ==============================================================================
-    // --- 最终确认的三个步骤对应的选择器 ---
+    // --- 关键修正：在所有操作之前，先尝试关闭可能出现的公告弹窗 ---
     // ==============================================================================
-    // 第1步: 点击底部导航栏第3个按钮，用于跳转到任务/奖励页面
-    const step1_NavigateButtonSelector = '.uni-tabbar .uni-tabbar__item:nth-child(4)'; 
-    
-    // 第2步: 在任务页面上，点击“每日签到”的“领取”任务按钮
-    const step2_TaskButtonSelector = '.rewards-item uni-button';
-    
-    // 第3步: 在弹出的窗口中，点击最终的“我知道了”确认按钮
-    const step3_PopupButtonSelector = '.dialog-btn-confirm';
+    try {
+      const announcementCloseButtonSelector = '.notice-btn1'; // 使用你找到的正确选择器
+      
+      console.log('尝试查找并关闭公告弹窗...');
+      // 给弹窗一个较短的等待时间，比如5秒，因为它要么很快出现，要么就没有
+      await page.waitForSelector(announcementCloseButtonSelector, { visible: true, timeout: 5000 }); 
+      await page.click(announcementCloseButtonSelector);
+      console.log('✅ 公告弹窗已关闭。');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 短暂等待，确保关闭动画完成
+    } catch (e) {
+      console.log('ℹ️ 未发现公告弹窗，或弹窗已消失，继续执行...');
+    }
     // ==============================================================================
+
+    // 定义所有步骤的正确选择器
+    const step1_NavigateButtonSelector = '.u-tabbar__content__item-wrapper .u-tabbar-item:nth-child(3)';
+    const step2_TaskButtonSelector = '.get-rewards-btn';
+    const step3_PopupButtonSelector = '.gen-link-btn';
 
     try {
-      // --- 第1步：点击底部导航按钮，跳转页面 ---
-      console.log('1/3: 正在查找底部导航栏按钮...');
-      await page.waitForSelector(step1_NavigateButtonSelector, { visible: true, timeout: 15000 });
-      console.log('导航按钮已找到，正在点击以跳转到奖励页面...');
-      await page.click(step1_NavigateButtonSelector);
-
-      // --- 第2步：在奖励页面点击任务按钮 ---
-      console.log('2/3: 正在查找奖励页面的任务按钮...');
-      // 等待新按钮出现，这表明页面已成功跳转
-      await page.waitForSelector(step2_TaskButtonSelector, { visible: true, timeout: 15000 });
-      console.log('任务按钮已找到，正在点击...');
-      await page.click(step2_TaskButtonSelector);
+      console.log('开始执行每日签到流程...');
       
-      // --- 第3步：点击弹窗中的最终确认按钮 ---
-      console.log('3/3: 正在查找弹窗中的最终确认按钮...');
-      await page.waitForSelector(step3_PopupButtonSelector, { visible: true, timeout: 15000 });
-      console.log('最终确认按钮已找到，准备点击并验证API响应...');
+      console.log('  -> 1/3: 正在查找并点击底部"领电量"导航按钮...');
+      await page.waitForSelector(step1_NavigateButtonSelector, { visible: true, timeout: 15000 });
+      await page.click(step1_NavigateButtonSelector);
+      console.log('  -> "领电量"导航按钮已点击。');
 
-      // 点击最后一个按钮时，我们监听API响应来确认签到是否真的成功
-      const [finalResponse] = await Promise.all([
-        page.waitForResponse(response => 
-          response.url().includes('/api/user/sign-in') && response.status() === 200,
-          { timeout: 30000 }
-        ),
-        page.click(step3_PopupButtonSelector)
-      ]);
+      console.log('  -> 2/3: 正在查找任务页面的"领取奖励"按钮...');
+      await page.waitForSelector(step2_TaskButtonSelector, { visible: true, timeout: 15000 });
+      await page.click(step2_TaskButtonSelector);
+      console.log('  -> "领取奖励"按钮已点击。');
+      
+      console.log('  -> 3/3: 正在查找并点击最终确认弹窗的"领取"按钮...');
+      await page.waitForSelector(step3_PopupButtonSelector, { visible: true, timeout: 15000 });
+
+      // ==============================================================================
+      // --- 关键修正：增加短暂延时，等待弹窗动画完成 ---
+      // ==============================================================================
+      console.log('  -> 弹窗按钮已找到，等待 500ms 确保动画播放完毕...');
+      await new Promise(resolve => setTimeout(resolve, 500)); // 等待半秒
+      
+      // 为了更稳健地处理，我们先设置好响应监听，再执行点击
+      console.log('  -> 准备点击最终按钮并监听API响应...');
+      const finalResponsePromise = page.waitForResponse(response =>
+        response.url().includes('/api/user/sign-in') && response.status() === 200, { timeout: 30000 }
+      );
+      
+      await page.click(step3_PopupButtonSelector);
+      console.log('  -> 最终"领取"按钮已点击。');
+
+      const finalResponse = await finalResponsePromise; // 等待API响应完成
+      // ==============================================================================
 
       const responseJson = await finalResponse.json();
-      if (responseJson.data === true) {
-        console.log(`✅✅✅ 账户 ${account.username} 已成功完成所有点击步骤并签到成功！`);
+      if (responseJson.data === true) { // 根据实际成功响应调整判断条件
+        console.log(`✅✅✅ 账户 ${account.username} 已成功完成每日签到！`);
       } else {
-        console.log(`ℹ️  账户 ${account.username} 操作完成，但服务器返回失败消息: "${responseJson.message}" (可能今日已签到)`);
+        console.log(`ℹ️  账户 ${account.username} 签到操作完成，但服务器返回: "${responseJson.message}" (可能今日已签到)`);
       }
-
     } catch (error) {
+    // ... catch 块内容保持不变 ...
       console.error(`❌ 账户 ${account.username} 在模拟点击过程中失败。`);
+      const errorScreenshotPath = `error_screenshot_${account.username}_${Date.now()}.png`;
+      await page.screenshot({ path: errorScreenshotPath, fullPage: true });
+      console.log(`📷 已保存错误截图至: ${errorScreenshotPath}`);
+
       if (error.name === 'TimeoutError') {
-        console.error('错误原因：超时。某个按钮未在规定时间内出现。请检查您的选择器或网站结构是否已改变。');
+        console.error('错误原因：超时。某个按钮未在规定时间内出现。请再次检查选择器或网站结构是否已改变。');
       } else {
+        // 将原始错误信息打印出来，更便于调试
         console.error('未知错误详情:', error.message);
       }
       return false;
