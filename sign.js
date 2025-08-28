@@ -58,11 +58,13 @@ async function processAccount(account) {
     // --- 最终确认的三个步骤对应的选择器 ---
     // ==============================================================================
     // 第1步: 点击底部导航栏第3个按钮，用于跳转到任务/奖励页面
-    const step1_NavigateButtonSelector = '.u-tabbar__content__item-wrapper:nth-child(3)'; 
-    // 第2步: 在任务页面上，点击具体的“领取奖励”任务按钮
-    const step2_TaskButtonSelector = '.get-rewards';
-    // 第3步: 在弹出的窗口中，点击最终的“确认领取”按钮
-    const step3_PopupButtonSelector = '.gen-link-btn';
+    const step1_NavigateButtonSelector = '.uni-tabbar .uni-tabbar__item:nth-child(4)'; 
+    
+    // 第2步: 在任务页面上，点击“每日签到”的“领取”任务按钮
+    const step2_TaskButtonSelector = '.rewards-item uni-button';
+    
+    // 第3步: 在弹出的窗口中，点击最终的“我知道了”确认按钮
+    const step3_PopupButtonSelector = '.dialog-btn-confirm';
     // ==============================================================================
 
     try {
