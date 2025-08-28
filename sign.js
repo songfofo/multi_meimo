@@ -25,16 +25,17 @@ async function processAccount(account) {
     const page = await browser.newPage();
     await page.setUserAgent(baseConfig.userAgent);
 
-    console.log(`导航至 ${baseConfig.baseURL} 以处理 Cloudflare...`);
+    console.log('导航至主页...');
     await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 90000 });
-    console.log('Cloudflare 验证通过，页面加载完成。');
+    console.log('页面加载完成。');
 
+    // 登录操作
     console.log(`尝试为账户 ${account.username} 登录...`);
     const loginResult = await page.evaluate(async (url, username, password, deviceId) => {
       try {
         const response = await fetch(`${url}/api/user/login`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': '*/*', 'Lang': 'ZH' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password, code: "", inviteCode: '', deviceId })
         });
         return await response.json();
@@ -43,65 +44,76 @@ async function processAccount(account) {
       }
     }, baseConfig.baseURL, account.username, account.password, generateDeviceId());
 
-    if (loginResult.error || !loginResult.data || !loginResult.data.token) {
+    if (!loginResult.data || !loginResult.data.token) {
       console.error(`❌ 账户 ${account.username} 登录失败. 响应:`, JSON.stringify(loginResult));
       throw new Error(`登录失败，未能获取 token。`);
     }
-
-    const token = loginResult.data.token;
     console.log(`✅ 账户 ${account.username} 登录成功。`);
+    
+    // 登录后刷新页面，确保登录状态在浏览器中生效
+    console.log('登录后刷新页面以应用会话...');
+    await page.goto(baseConfig.baseURL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    console.log(`尝试为账户 ${account.username} 执行签到...`);
-    const signInResult = await page.evaluate(async (url, authToken) => {
-      try {
-        const response = await fetch(`${url}/api/user/sign-in`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'Accept': '*/*', 
-            'Authorization': `Bearer ${authToken}`,
-            'Origin': url,
-            'Referer': `${url}/`
-          },
-          body: JSON.stringify({})
-        });
-        return {
-          status: response.status,
-          text: await response.text()
-        };
-      } catch (e) {
-        return { error: e.message };
+    // ==============================================================================
+    // --- 最终确认的三个步骤对应的选择器 ---
+    // ==============================================================================
+    // 第1步: 点击底部导航栏第3个按钮，用于跳转到任务/奖励页面
+    const step1_NavigateButtonSelector = '.u-tabbar__content__item-wrapper:nth-child(3)'; 
+    // 第2步: 在任务页面上，点击具体的“领取奖励”任务按钮
+    const step2_TaskButtonSelector = '.get-rewards';
+    // 第3步: 在弹出的窗口中，点击最终的“确认领取”按钮
+    const step3_PopupButtonSelector = '.gen-link-btn';
+    // ==============================================================================
+
+    try {
+      // --- 第1步：点击底部导航按钮，跳转页面 ---
+      console.log('1/3: 正在查找底部导航栏按钮...');
+      await page.waitForSelector(step1_NavigateButtonSelector, { visible: true, timeout: 15000 });
+      console.log('导航按钮已找到，正在点击以跳转到奖励页面...');
+      await page.click(step1_NavigateButtonSelector);
+
+      // --- 第2步：在奖励页面点击任务按钮 ---
+      console.log('2/3: 正在查找奖励页面的任务按钮...');
+      // 等待新按钮出现，这表明页面已成功跳转
+      await page.waitForSelector(step2_TaskButtonSelector, { visible: true, timeout: 15000 });
+      console.log('任务按钮已找到，正在点击...');
+      await page.click(step2_TaskButtonSelector);
+      
+      // --- 第3步：点击弹窗中的最终确认按钮 ---
+      console.log('3/3: 正在查找弹窗中的最终确认按钮...');
+      await page.waitForSelector(step3_PopupButtonSelector, { visible: true, timeout: 15000 });
+      console.log('最终确认按钮已找到，准备点击并验证API响应...');
+
+      // 点击最后一个按钮时，我们监听API响应来确认签到是否真的成功
+      const [finalResponse] = await Promise.all([
+        page.waitForResponse(response => 
+          response.url().includes('/api/user/sign-in') && response.status() === 200,
+          { timeout: 30000 }
+        ),
+        page.click(step3_PopupButtonSelector)
+      ]);
+
+      const responseJson = await finalResponse.json();
+      if (responseJson.data === true) {
+        console.log(`✅✅✅ 账户 ${account.username} 已成功完成所有点击步骤并签到成功！`);
+      } else {
+        console.log(`ℹ️  账户 ${account.username} 操作完成，但服务器返回失败消息: "${responseJson.message}" (可能今日已签到)`);
       }
-    }, baseConfig.baseURL, token);
 
-    if (signInResult.error) {
-        console.error(`❌ 账户 ${account.username} 签到请求失败: ${signInResult.error}`);
-        return false;
-    }
-
-    if (signInResult.status === 200) {
-      try {
-        const jsonResponse = JSON.parse(signInResult.text);
-        // *** 优化点：根据新截图的信息，精确判断成功条件 ***
-        if (jsonResponse.data === true) {
-          console.log(`✅✅✅ 账户 ${account.username} 签到成功！`);
-        } else {
-          // 可能是“今日已签到”等情况，打印服务器返回的消息
-          console.log(`ℹ️  账户 ${account.username} 操作完成。服务器消息: ${jsonResponse.message || signInResult.text}`);
-        }
-      } catch (e) {
-        // 解析JSON失败，但请求是成功的。通常意味着“已签到”。
-        console.log(`✅ 账户 ${account.username} 签到请求已发送。服务器返回非JSON响应，可能已成功或今日已签到。响应内容: "${signInResult.text}"`);
+    } catch (error) {
+      console.error(`❌ 账户 ${account.username} 在模拟点击过程中失败。`);
+      if (error.name === 'TimeoutError') {
+        console.error('错误原因：超时。某个按钮未在规定时间内出现。请检查您的选择器或网站结构是否已改变。');
+      } else {
+        console.error('未知错误详情:', error.message);
       }
-    } else {
-      console.error(`❌ 账户 ${account.username} 签到失败。状态码: ${signInResult.status}, 响应: ${signInResult.text}`);
       return false;
     }
     
     return true;
 
   } catch (error) {
-    console.error(`❌ 处理账户 ${account.username} 时发生错误:`, error.message);
+    console.error(`❌ 处理账户 ${account.username} 时发生严重错误:`, error.message);
     return false;
   } finally {
     if (browser) {
@@ -110,7 +122,6 @@ async function processAccount(account) {
     }
   }
 }
-
 
 // --- 后续代码无需修改 ---
 
