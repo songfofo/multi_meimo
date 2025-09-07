@@ -76,7 +76,7 @@ async function processAccount(account) {
     // --- 关键修正：在所有操作之前，先尝试关闭可能出现的公告弹窗 ---
     // ==============================================================================
     try {
-      const announcementCloseButtonSelector = '.notice-btn1'; // 使用你找到的正确选择器
+      const announcementCloseButtonSelector = '.notice-btn2'; // 使用你找到的正确选择器
       
       console.log('尝试查找并关闭公告弹窗...');
       // 给弹窗一个较短的等待时间，比如5秒，因为它要么很快出现，要么就没有
