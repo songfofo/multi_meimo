@@ -73,18 +73,24 @@ async function processAccount(account) {
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     // ==============================================================================
-    // --- 关键修正：在所有操作之前，先尝试关闭可能出现的公告弹窗 ---
+    // --- 关键修改：智能关闭公告弹窗，同时查找多个可能的按钮 ---
     // ==============================================================================
     try {
-      const announcementCloseButtonSelector = '.notice-btn2'; // 使用你找到的正确选择器
+      // 将两个可能的选择器用逗号连接成一个字符串。
+      // Puppeteer 会查找并操作第一个匹配此选择器的元素。
+      const announcementCloseButtonSelector = '.notice-btn2, .notice-btn1';
+      console.log('尝试查找并关闭公告弹窗 (检查 .notice-btn2 或 .notice-btn1)...');
       
-      console.log('尝试查找并关闭公告弹窗...');
-      // 给弹窗一个较短的等待时间，比如5秒，因为它要么很快出现，要么就没有
+      // 等待任意一个按钮可见
       await page.waitForSelector(announcementCloseButtonSelector, { visible: true, timeout: 5000 }); 
+      
+      // 点击找到的第一个按钮
       await page.click(announcementCloseButtonSelector);
+      
       console.log('✅ 公告弹窗已关闭。');
       await new Promise(resolve => setTimeout(resolve, 1000)); // 短暂等待，确保关闭动画完成
     } catch (e) {
+      // 如果在超时时间内，两个按钮都没有出现，则会进入此 catch 块
       console.log('ℹ️ 未发现公告弹窗，或弹窗已消失，继续执行...');
     }
     // ==============================================================================
