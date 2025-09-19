@@ -73,25 +73,35 @@ async function processAccount(account) {
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     // ==============================================================================
-    // --- 关键修改：智能关闭公告弹窗，同时查找多个可能的按钮 ---
+    // --- 关键修改：使用循环和组合选择器处理多个公告弹窗 ---
     // ==============================================================================
-    try {
-      // 将两个可能的选择器用逗号连接成一个字符串。
-      // Puppeteer 会查找并操作第一个匹配此选择器的元素。
-      const announcementCloseButtonSelector = '.notice-btn2, .notice-btn1';
-      console.log('尝试查找并关闭公告弹窗 (检查 .notice-btn2 或 .notice-btn1)...');
-      
-      // 等待任意一个按钮可见
-      await page.waitForSelector(announcementCloseButtonSelector, { visible: true, timeout: 5000 }); 
-      
-      // 点击找到的第一个按钮
-      await page.click(announcementCloseButtonSelector);
-      
-      console.log('✅ 公告弹窗已关闭。');
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 短暂等待，确保关闭动画完成
-    } catch (e) {
-      // 如果在超时时间内，两个按钮都没有出现，则会进入此 catch 块
-      console.log('ℹ️ 未发现公告弹窗，或弹窗已消失，继续执行...');
+    console.log('▶️ 开始循环检查并关闭所有公告弹窗 (查找 .notice-btn2 或 .notice-btn1)...');
+    let closedCount = 0;
+    const maxNoticesToClose = 5; // 设置一个上限，防止无限循环
+
+    for (let i = 0; i < maxNoticesToClose; i++) {
+        try {
+            // 定义组合选择器，可以匹配 .notice-btn2 或 .notice-btn1
+            const closeButtonSelector = '.notice-btn2, .notice-btn1';
+            
+            // 等待任意一个按钮出现，设置一个较短的超时时间
+            await page.waitForSelector(closeButtonSelector, { visible: true, timeout: 5000 });
+            
+            // 点击找到的第一个匹配按钮
+            await page.click(closeButtonSelector);
+            closedCount++;
+            console.log(`  -> ✅ 已关闭第 ${closedCount} 个公告弹窗。`);
+            
+            // 等待一小段时间，让下一个弹窗（如果有的话）加载出来
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        } catch (error) {
+            // 如果在超时时间内没有找到按钮，说明没有（或没有更多）弹窗了
+            console.log('✅ 未再发现公告弹窗，流程继续...');
+            break; // 退出循环
+        }
+    }
+    if (closedCount === maxNoticesToClose) {
+        console.log('⚠️ 已达到最大弹窗关闭次数，可能还有弹窗未关闭。');
     }
     // ==============================================================================
 
@@ -116,13 +126,9 @@ async function processAccount(account) {
       console.log('  -> 3/3: 正在查找并点击最终确认弹窗的"领取"按钮...');
       await page.waitForSelector(step3_PopupButtonSelector, { visible: true, timeout: 15000 });
 
-      // ==============================================================================
-      // --- 关键修正：增加短暂延时，等待弹窗动画完成 ---
-      // ==============================================================================
       console.log('  -> 弹窗按钮已找到，等待 500ms 确保动画播放完毕...');
-      await new Promise(resolve => setTimeout(resolve, 500)); // 等待半秒
+      await new Promise(resolve => setTimeout(resolve, 500)); 
       
-      // 为了更稳健地处理，我们先设置好响应监听，再执行点击
       console.log('  -> 准备点击最终按钮并监听API响应...');
       const finalResponsePromise = page.waitForResponse(response =>
         response.url().includes('/api/user/sign-in') && response.status() === 200, { timeout: 30000 }
@@ -131,17 +137,15 @@ async function processAccount(account) {
       await page.click(step3_PopupButtonSelector);
       console.log('  -> 最终"领取"按钮已点击。');
 
-      const finalResponse = await finalResponsePromise; // 等待API响应完成
-      // ==============================================================================
+      const finalResponse = await finalResponsePromise; 
 
       const responseJson = await finalResponse.json();
-      if (responseJson.data === true) { // 根据实际成功响应调整判断条件
+      if (responseJson.data === true) { 
         console.log(`✅✅✅ 账户 ${account.username} 已成功完成每日签到！`);
       } else {
         console.log(`ℹ️  账户 ${account.username} 签到操作完成，但服务器返回: "${responseJson.message}" (可能今日已签到)`);
       }
     } catch (error) {
-    // ... catch 块内容保持不变 ...
       console.error(`❌ 账户 ${account.username} 在模拟点击过程中失败。`);
       const errorScreenshotPath = `error_screenshot_${account.username}_${Date.now()}.png`;
       await page.screenshot({ path: errorScreenshotPath, fullPage: true });
@@ -150,7 +154,6 @@ async function processAccount(account) {
       if (error.name === 'TimeoutError') {
         console.error('错误原因：超时。某个按钮未在规定时间内出现。请再次检查选择器或网站结构是否已改变。');
       } else {
-        // 将原始错误信息打印出来，更便于调试
         console.error('未知错误详情:', error.message);
       }
       return false;
