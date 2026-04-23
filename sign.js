@@ -42,7 +42,7 @@ async function processAccount(account) {
   try {
     console.log('启动浏览器并应用 stealth 插件...');
     browser = await puppeteer.launch({
-      headless: false, // 调试时建议设为 false，确认脚本稳定运行后可改为 true
+      headless: true, // 调试时建议设为 false，确认脚本稳定运行后可改为 true
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
     });
     const page = await browser.newPage();
