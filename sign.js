@@ -7,12 +7,33 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const baseConfig = {
-  baseURL: 'https://www.sexyai.top',
+  baseURL: 'https://www.sexyai.ai',
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 };
-
+// 'https://www.meimo3.com'
 function generateDeviceId() {
   return Date.now().toString() + Math.random().toString().slice(2);
+}
+
+async function clickTabbarItemByText(page, targetText, fallbackSelector) {
+  const clicked = await page.evaluate((text) => {
+    const tabItems = Array.from(document.querySelectorAll('.u-tabbar-item'));
+    const targetItem = tabItems.find((item) => {
+      const label = (item.innerText || item.textContent || '').replace(/\s+/g, '');
+      const rect = item.getBoundingClientRect();
+      return label.includes(text) && rect.width > 0 && rect.height > 0;
+    });
+
+    if (!targetItem) return false;
+    targetItem.click();
+    return true;
+  }, targetText);
+
+  if (clicked) return 'text';
+
+  await page.waitForSelector(fallbackSelector, { visible: true, timeout: 15000 });
+  await page.click(fallbackSelector);
+  return 'fallback';
 }
 
 async function processAccount(account) {
@@ -21,7 +42,7 @@ async function processAccount(account) {
   try {
     console.log('启动浏览器并应用 stealth 插件...');
     browser = await puppeteer.launch({
-      headless: true, // 调试时建议设为 false，确认脚本稳定运行后可改为 true
+      headless: false, // 调试时建议设为 false，确认脚本稳定运行后可改为 true
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
     });
     const page = await browser.newPage();
@@ -105,7 +126,7 @@ async function processAccount(account) {
     }
     // ==============================================================================
 
-    // 定义所有步骤的正确选择器
+    // 定义所有步骤的正确选择器。第一步优先按文字锁定，选择器仅作为兜底。
     const step1_NavigateButtonSelector = '.u-tabbar__content__item-wrapper .u-tabbar-item:nth-child(3)';
     const step2_TaskButtonSelector = '.get-rewards-btn';
     const step3_PopupButtonSelector = '.gen-link-btn';
@@ -114,8 +135,12 @@ async function processAccount(account) {
       console.log('开始执行每日签到流程...');
       
       console.log('  -> 1/3: 正在查找并点击底部"领电量"导航按钮...');
-      await page.waitForSelector(step1_NavigateButtonSelector, { visible: true, timeout: 15000 });
-      await page.click(step1_NavigateButtonSelector);
+      const navigateClickMethod = await clickTabbarItemByText(page, '领电量', step1_NavigateButtonSelector);
+      if (navigateClickMethod === 'text') {
+        console.log('  -> 已通过按钮文字锁定"领电量"导航按钮。');
+      } else {
+        console.log('  -> 未能通过文字锁定，已使用原选择器兜底点击。');
+      }
       console.log('  -> "领电量"导航按钮已点击。');
 
       console.log('  -> 2/3: 正在查找任务页面的"领取奖励"按钮...');
