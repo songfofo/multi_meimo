@@ -10,9 +10,21 @@ const baseConfig = {
   baseURL: 'https://www.sexyai.ai',
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 };
+const browserCloseTimeoutMs = Number(process.env.BROWSER_CLOSE_TIMEOUT_MS || 10000);
 // 'https://www.meimo3.com'
 function generateDeviceId() {
   return Date.now().toString() + Math.random().toString().slice(2);
+}
+
+function timeoutAfter(ms, message) {
+  return new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+}
+
+async function withTimeout(promise, ms, message) {
+  return Promise.race([promise, timeoutAfter(ms, message)]);
 }
 
 async function clickTabbarItemByText(page, targetText, fallbackSelector) {
@@ -191,8 +203,17 @@ async function processAccount(account) {
     return false;
   } finally {
     if (browser) {
-      await browser.close();
-      console.log('浏览器已关闭。');
+      try {
+        await withTimeout(browser.close(), browserCloseTimeoutMs, `关闭浏览器超过 ${browserCloseTimeoutMs / 1000} 秒`);
+        console.log('浏览器已关闭。');
+      } catch (error) {
+        console.error(`⚠️ 浏览器关闭超时或失败: ${error.message}`);
+        const browserProcess = browser.process && browser.process();
+        if (browserProcess) {
+          browserProcess.kill('SIGKILL');
+          console.error('⚠️ 已强制结束浏览器进程。');
+        }
+      }
     }
   }
 }
@@ -238,6 +259,7 @@ async function main() {
     console.log(`❌ 失败: ${failCount}`);
     
     if (failCount > 0) process.exit(1);
+    process.exit(0);
   } catch (error) {
     console.error('❌ 脚本主程序执行失败:', error.message);
     process.exit(1);

@@ -8,6 +8,7 @@ on:
 jobs:
   sign-in:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -19,9 +20,11 @@ jobs:
           node-version: '20'  # 使用Node 20（兼容Puppeteer）
 
       - name: Install dependencies
-        run: npm install
+        timeout-minutes: 8
+        run: npm ci
 
       - name: Install Chrome dependencies for Puppeteer
+        timeout-minutes: 8
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -62,6 +65,7 @@ jobs:
           dpkg -l | grep -E 'ca-certificates|fonts-liberation|libasound2t64|libatk|libcairo|libcups|libdbus|libexpat|libfontconfig|libgbm|libglib|libgtk|libnspr|libnss|libpango|libstdc|libx11|libxcb|libxcomposite|libxcursor|libxdamage|libxext|libxfixes|libxi|libxrandr|libxrender|libxss|libxtst|wget|xdg-utils'
 
       - name: Run sign-in script
+        timeout-minutes: 10
         env:
           ACCOUNTS: ${{ secrets.ACCOUNTS }}  # 从GitHub Secrets获取
         run: node sign.js
