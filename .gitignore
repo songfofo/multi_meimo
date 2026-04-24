@@ -3,7 +3,6 @@ account.txt
 sign_old.js
 node_modules
 .env
-package-lock.json
 *.log
 error-screenshot-*.png
 error-page-*.html
