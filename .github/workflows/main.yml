@@ -23,8 +23,16 @@ jobs:
         timeout-minutes: 8
         run: npm ci
 
+      - name: Install xvfb
+        timeout-minutes: 3
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*azure* /etc/apt/apt-mirrors.txt || true
+          sudo apt-get install -y --no-install-recommends xvfb \
+            || (sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+                && sudo apt-get install -y --no-install-recommends xvfb)
+
       - name: Run sign-in script
         timeout-minutes: 10
         env:
           ACCOUNTS: ${{ secrets.ACCOUNTS }}  # 从GitHub Secrets获取
-        run: node sign.js
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' node sign.js
