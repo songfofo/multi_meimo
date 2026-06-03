@@ -7,7 +7,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const baseConfig = {
-  baseURL: 'https://www.sexyai.ai',
+  baseURL: 'https://www.meimoai12.com',
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 };
 const browserCloseTimeoutMs = Number(process.env.BROWSER_CLOSE_TIMEOUT_MS || 10000);
